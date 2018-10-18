@@ -90,7 +90,10 @@ void configureDisplay(void){
   display.display();
   delay(2000);
   display.clearDisplay();
+  display.display();
   display.setCursor(0,0);
+  display.println("Press button to begin");
+  display.display();
 
 }
 
@@ -137,19 +140,39 @@ void readTsl(int *readings, int readingNo){
 }
 
 void takeReading(int *readings){
+  display.clearDisplay();
+  display.display();
+  display.setCursor(0,0);
+  display.println("1. Load empty cuvette");
+  display.println("2. Press button");
+  display.display();
+
+  delay(50);
+  while(digitalRead(button_B)){
+    delay(50);
+  }
+
   digitalWrite(uvLed, HIGH);
   delay(100);
   readTsl(&readings[0], 0);
   delay(10);
   yield();
   display.clearDisplay();
-  display.println("Insert Sample and press button");
+  display.display();
+  display.setCursor(0,0);
+  display.println("1. Insert Sample");
+  display.println("2. Press button");
+  display.setCursor(0,0);
   display.display();
 
   while(digitalRead(button_B)){
     delay(50);
     yield();
   }
+  display.clearDisplay();
+  display.setCursor(0,1);
+  display.println("Processing...");
+  display.display();
   delay(650);
   readTsl(&readings[0], 1);
   delay(10);

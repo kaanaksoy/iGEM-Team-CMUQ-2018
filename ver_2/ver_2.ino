@@ -2,8 +2,9 @@
 #include <Wire.h>
 #include <Arduino.h>
 #include "Adafruit_BLE.h"
-#include <Adafruit_Sensor.h>
 #include <Adafruit_GFX.h>
+#include <Adafruit_Sensor.h>
+
 #include "Adafruit_BluefruitLE_SPI.h"
 #include "Adafruit_BluefruitLE_UART.h"
 #include <Adafruit_SSD1306.h>
@@ -19,11 +20,13 @@ Adafruit_SSD1306 display(OLED_RESET);
 #define YPOS 1
 #define DELTAY 2
 #define button_B 6
+#define uvLed 12
+
 #define FACTORYRESET_ENABLE         0
 #define MINIMUM_FIRMWARE_VERSION    "0.6.6"
 #define MODE_LED_BEHAVIOUR          "MODE"
 
-Adafruit_TSL2591 tsl = Adafruit_TSL2591(2591
+Adafruit_TSL2591 tsl = Adafruit_TSL2591(2591);
 
 Adafruit_BluefruitLE_SPI ble(BLUEFRUIT_SPI_CS, BLUEFRUIT_SPI_IRQ, BLUEFRUIT_SPI_RST);
 
@@ -34,11 +37,19 @@ Adafruit_BluefruitLE_SPI ble(BLUEFRUIT_SPI_CS, BLUEFRUIT_SPI_IRQ, BLUEFRUIT_SPI_
 /**************************************************************************/
 
 //Sends data over bluetooth connection
-void blePrintData(int *readings, Adafruit_BluefruitLE_SPI ble){
+void blePrintData(float *readings, Adafruit_BluefruitLE_SPI ble){
 
-  for (i = 0, i < 4, i++)
-  ble,print("AT+BLEUARTTX=");
-  ble.println(readings[i]);
+    ble.print("AT+BLEUARTTX=");
+    ble.print("{");
+    ble.print(readings[1]);
+    ble.print(", ");
+    ble.print(readings[2]);
+    ble.print(", ");
+    ble.print(readings[3]);
+    ble.print(", ");
+    ble.print(readings[4]);
+    ble.print("}");
+    ble.println(" \n");
 
 }
 
@@ -52,7 +63,7 @@ void configureSensor(void){
   // Changing the integration time gives you a longer time over which to sense light
   // longer timelines are slower, but are good in very low light situtations!
 
-  //tsl.setTiming(TSL2591_INTEGRATIONTIME_100MS);  // shortest integration time (bright light)
+  // tsl.setTiming(TSL2591_INTEGRATIONTIME_100MS);  // shortest integration time (bright light)
   // tsl.setTiming(TSL2591_INTEGRATIONTIME_200MS);
   tsl.setTiming(TSL2591_INTEGRATIONTIME_300MS);
   // tsl.setTiming(TSL2591_INTEGRATIONTIME_400MS);
@@ -73,30 +84,95 @@ void initializeDisplay(void){
   display.display();
   delay(2000);
   display.clearDisplay();
+  display.display();
   display.setCursor(0,0);
+  display.println("Press button to begin");
+  display.display();
+
+
 }
 
-//Prints the sensor readings on the OLED screen.
-void printReadings(int *readings){
-  display.setCursor(0,0);
 
-  display.println("Full|IR|Visible|LUX");
-  for (i = 0, i < 4, i++)
-  display.print(readings[i]);
-  display.print(" ");
+//Prints the sensor readings on the OLED screen.
+void printReadings(float *readings){
+  display.clearDisplay();
+  display.display();
+  display.setCursor(0,0);
+  float avg = 0;
+
+  display.print("LUX: ");
+  for (byte i = 1; i < 5; i++) {
+    avg = avg + readings[i];
+  }
+  avg = avg / 5.0;
+  display.print(avg);
+  display.display();
 }
 
 //Reads sensor data, returns array with the full spectrum, ir , visible and lux readings
-  void readTsl(int *readings){
+void readTsl(float *readings, int readingNo){
   uint32_t lum = tsl.getFullLuminosity();
   uint16_t ir, full;
-  ir = lum >> 16;
+  ir = lum >> 0x10;
   full = lum & 0xFFFF;
-  readings[0] = full;
-  readings[1] = ir;
-  readings[2] = (full - ir);
-  readings[3] = tsl.calculateLux(full, ir);
+
+  switch(readingNo){
+    case 0:
+      readings[0] = tsl.calculateLux(full, ir);
+      break;
+
+    default:
+      readings[readingNo] = tsl.calculateLux(full, ir) - readings[0];
+      if (readings[readingNo] < 0){
+        readings[readingNo] = 0;
+      }
+      break;
+  }
 }
+
+void takeReading(float *readings){
+  display.clearDisplay();
+  display.display();
+  display.setCursor(0,0);
+  display.println("1. Load empty cuvette");
+  display.println("2. Press button");
+  display.display();
+
+  delay(100);
+  while(digitalRead(button_B)){
+    delay(50);
+  }
+
+  digitalWrite(uvLed, HIGH);
+  delay(100);
+  readTsl(&readings[0], 0);
+  delay(10);
+  yield();
+  display.clearDisplay();
+  display.display();
+  display.setCursor(0,0);
+  display.println("3. Insert Sample");
+  display.println("4. Press Button");
+  display.setCursor(0,0);
+  display.display();
+
+  while(digitalRead(button_B)){
+    delay(50);
+    yield();
+  }
+  display.clearDisplay();
+  display.setCursor(0,0);
+  display.println("Processing...");
+  display.display();
+  delay(650);
+  for (int i = 1; i < 5; i++){
+    readTsl(&readings[0], i);
+    delay(10);
+  }
+
+  digitalWrite(uvLed, LOW);
+}
+
 /**************************************************************************/
 /*!
     VOID SETUP
@@ -104,48 +180,34 @@ void printReadings(int *readings){
 /**************************************************************************/
 
 void setup(void) {
-
-  pinMode(button_B, INPUT_PULLUP);
-  int readings[] = {0, 0, 0, 0};
-  initializeDisplay();
-
-  if ( !ble.begin(VERBOSE_MODE) ) {
-    display.println("Couldn't find Bluefruit"));
-    display.display();
-  }
-
-  display.println("OK!");
-  display.display();
-
-  if ( FACTORYRESET_ENABLE ) {
-    /* Perform a factory reset to make sure everything is in a known state */
-    display.println("Performing a factory reset: ");
-    display.display();
-    if ( ! ble.factoryReset() ){
-      display.println("Couldn't factory reset");
-      display.display();
-    }
-  }
+  Serial.begin(9600);
+  pinMode (button_B, INPUT_PULLUP);
+  pinMode (uvLed, OUTPUT);
+  float readings[] = {0, 0, 0, 0, 0};
   ble.echo(false);
   ble.verbose(false);
-
-  if (tsl.begin()){
-    display.println("Connected to sensor.");
-    }
-  else {
-    Serial.println(F("No sensor found..."));
-  }
-
+  initializeDisplay();
+  display.clearDisplay();
   configureSensor();
 
-  while (! ble.isConnected()){
-    yield();
-    delay(500);
-  }
 }
 
 void loop(){
   if (! digitalRead(button_B)){
-    
+    display.clearDisplay();
+    display.display();
+    float readings[] = {0, 0, 0, 0, 0, 0, 0, 0};
+    takeReading(&readings[0]);
+    display.clearDisplay();
+    printReadings(&readings[0]);
+    Serial.println("Here");
+    if (ble.isConnected()){
+      Serial.println("This");
+      blePrintData(&readings[0], ble);
+    }
+    Serial.println("Now Here");
+    delay(10);
+    yield();
+    display.display();
   }
 }
