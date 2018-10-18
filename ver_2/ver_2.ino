@@ -188,8 +188,30 @@ void setup(void) {
   ble.verbose(false);
   initializeDisplay();
   display.clearDisplay();
+  display.display();
   configureSensor();
+  /* Initialise the module */
+  Serial.print(F("Initialising the Bluefruit LE module: "));
+  if ( !ble.begin(VERBOSE_MODE) )
+  {
+    // error(F("Couldn't find Bluefruit, make sure it's in CoMmanD mode & check wiring?"));
+    Serial.println("Error");
+  }
+  Serial.println( F("OK!") );
 
+  if ( FACTORYRESET_ENABLE )
+  {
+    /* Perform a factory reset to make sure everything is in a known state */
+    Serial.println(F("Performing a factory reset: "));
+    if ( ! ble.factoryReset() ){
+      // error(F("Couldn't factory reset"));
+      Serial.println("Error");
+    }
+  }
+  while (! ble.isConnected()) {
+      Serial.println("Connecting..");
+      delay(500);
+  }
 }
 
 void loop(){
@@ -201,6 +223,8 @@ void loop(){
     display.clearDisplay();
     printReadings(&readings[0]);
     Serial.println("Here");
+    // Serial.println("")
+    Serial.println(ble.isConnected());
     if (ble.isConnected()){
       Serial.println("This");
       blePrintData(&readings[0], ble);
